@@ -4,7 +4,7 @@ This software is distributed under the terms of the GNU General Public License a
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version. See the file "[COPYING](COPYING)" for more details.
 """
-from msilib.schema import ComboBox
+from tkcalendar import DateEntry
 import psycopg2 as postgres
 import tkinter as tk
 from tkinter import ttk
@@ -13,6 +13,7 @@ import sys
 import os
 from datetime import datetime
 import re
+import winsound
 
 # Object for executing queries
 class Querier:
@@ -69,9 +70,16 @@ class Querier:
         print("Excecuting Query...")
         paramed_query = self.query
         for param in param_list:
-            paramName = '{' + param['label'].cget('text') + '}'
+            try:
+                paramName = '{' + param['originalname'] + '}'
+            except:
+                paramName = '{' + param['label'].cget('text') + '}'
             print(paramName)
-            paramValue = str(param['entry'].get())
+            try:
+                paramValue = str(param['entry'].get().strftime('YYYY-MM-DD'))
+            except:
+                paramValue = str(param['entry'].get())
+            print(paramValue)
             paramed_query = paramed_query.replace(paramName, paramValue)
         #try:
         self.cursor.execute(paramed_query)
@@ -200,6 +208,7 @@ class ActionMenu:
                 item['label'].destroy()
                 item['entry'].destroy()
         except Exception as e:
+            winsound.MessageBeep()
             PopupWindow(e)        
             print(e)
         self.param_objects.clear()
@@ -207,6 +216,7 @@ class ActionMenu:
             params = querier.selectQuery(self.config_input_options.get())
         except Exception as e:
             print(e)
+            winsound.MessageBeep()
             PopupWindow(e)
         self.file_prompt.delete(0,len(self.file_prompt.get()))
         today = datetime.today()
@@ -215,15 +225,28 @@ class ActionMenu:
             self.param_header.pack()
             self.param_active = True
         for i, param in enumerate(params):
-            label = tk.Label(master=self.act_menu, text=param, font='TkDefaultFont 10')
-            entry = tk.Entry(master=self.act_menu, font='TkDefaultFont 10', width=41)
-            self.param_objects.append({"label": label,"entry": entry})
+            splitParam = param.split("|")
+            if len(splitParam) == 1:
+                label = tk.Label(master=self.act_menu, text=param, font='TkDefaultFont 10')
+                entry = tk.Entry(master=self.act_menu, font='TkDefaultFont 10', width=41)
+                self.param_objects.append({"label": label,"entry": entry})
+            elif len(splitParam) > 1:
+                if splitParam[1] == "DATE":
+                    label = tk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
+                    entry = DateEntry(master=self.act_menu, width=45, date_pattern="YYYY-MM-DD")
+                    self.param_objects.append({"label": label, "entry": entry, "originalname":param})
+                else:
+                    label = tk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
+                    entry = ttk.Combobox(self.act_menu, value=splitParam[1:], width=45)
+                    self.param_objects.append({"label": label,"entry": entry, "originalname":param})
             self.param_objects[i]["label"].pack(side='top')
             self.param_objects[i]["entry"].pack(side='top')
+
 
     def run_query(self):
         for param in self.param_objects:
             if param['entry'].get() == '':
+                winsound.MessageBeep()
                 PopupWindow('Parameters must not be empty.')
         file = self.file_prompt.get()
         try:
@@ -232,8 +255,10 @@ class ActionMenu:
         except Exception as e:
             print(e)
             querier.rollbackTransaction()
+            winsound.MessageBeep()
             PopupWindow(e)
             return
+        winsound.MessageBeep()
         PopupWindow(f"Query Results Saved as:\n{file}")
 
 def generateLog(filepath):
@@ -277,6 +302,7 @@ def launch():
             print("Existing output directory found\n")
     except Exception as e:
         print(e)
+        winsound.MessageBeep()
         PopupWindow(e)
         return
 
@@ -284,6 +310,7 @@ def launch():
         querier = Querier(configName)
     except Exception as e:
         print(e)
+        winsound.MessageBeep()
         PopupWindow(e)
         return
     
