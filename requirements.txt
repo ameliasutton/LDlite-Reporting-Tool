@@ -1,0 +1,5 @@
+tkcalendar
+psycopg2
+tkinter
+dotenv
+sv_ttk

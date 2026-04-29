@@ -20,12 +20,11 @@ An Interface for running simple sql queries without a SQL IDE
 
 
 * Python 3.10+
-* json
 * tkinter
-* sys
 * psycopg2
-* os
-* datetime
+* dotenv
+* sv_ttk
+* tkcalendar
 
 ## Optional Requirements
 * pyinstaller
@@ -37,17 +36,23 @@ An Interface for running simple sql queries without a SQL IDE
 
 Simplified installation and usage instructions can be found here: https://docs.google.com/document/d/1nGEkgKNdkKOrfOSI5eol9Vj2pLpjtTXabGmMVlcCztw/edit?usp=sharing
 
-* Create json config file in the following format:
->{\
-    "dbname": " ",\
-    "user": " ",\
-    "host": " ",\
-    "password": " ",\
-    "query_filepath" : " ",\
-    "output_filepath" : " ",\
-    "generate_log": [Boolean],\
-    "log_file_output_filepath": " "\
-}
+* Create .env file in the following format:
+> dbname= {dbname}
+> 
+> user= {user}
+> 
+> host= {host}
+> 
+> port= {port}
+> 
+> password= {password}
+> 
+> query_filepath= {query filepath}
+> 
+> output_filepath= {output filepath}
+> 
+> log_file_output_filepath= {log filepath}
+
 
 * **query_filepath,**  **output_filepath,** and **log_file_output_filepath** will be created based on config information in runtime if they do not exist.
 
@@ -75,7 +80,10 @@ of running it through LDliteSingleSelect.bat
 
 * See https://github.com/5-C-Folio/LDlite-Queries for a collection of pre-created .sql files
 * To create parameters to populate as options in the menu place any prompt text within curly brackets in the value of the desired parameter like so:
-`'{Start Date (YYYY-MM-DD)}':: VARCHAR AS start_date`
+`'{Parameter field name}':: VARCHAR AS parameter`
+* For date parameters use `'{Parameter field name|DATE}':: VARCHAR AS parameter`
+* For a dropdown parameter use `'{Parameter field name|Option 1|Option 2|etc.}':: VARCHAR AS parameter`
+* To take in a list of values from a .csv file use `'{Parameter field name|SINGLE_COLUMN_CSV_NO_HEADER}':: VARCHAR AS parameter`
 
 ## Contributors
 
@@ -94,6 +102,14 @@ of running it through LDliteSingleSelect.bat
 * 1.1
     * Added option to enable a simple logging function
     * Config file now contains two new fields **generate_log,** (Boolean) and **log_file_output_filepath** (String)
+* 2.0
+  * Logging now uses the logging library **generate_log** configuration parameter removed
+  * Added support for new parameter types
+    * Date
+    * Dropdown
+    * List from file
+  * Configuration now uses dotenv
+  * Changed theme to improve readability
     
 ## Known Issues
 * 

@@ -8,40 +8,32 @@ from tkcalendar import DateEntry
 import psycopg2 as postgres
 import tkinter as tk
 from tkinter import ttk
-import json
+from tkinter import filedialog
+import sv_ttk
 import sys
 import os
 from datetime import datetime
 import re
 import winsound
+import csv
+import dotenv
+import logging
 
 # Object for executing queries
 class Querier:
-    def __init__(self, config_name):
-        print("Initializing Querier...")
-        try:
-            with open(config_name, "r") as c:
-                config = json.load(c)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Config File \"{config_name}\" not found")
-
-        dbname = config["dbname"]
-        user = config["user"]
-        host = config["host"]
-        password = config["password"]
-        port = config["port"]
-        self.query_filepath = config["query_filepath"]
-        self.output_filepath = config["output_filepath"]
-        self.log_file_output_filepath = config["log_file_output_filepath"]
+    def __init__(self):
         self.query_name = ''
+        logging.info("Querier Initialized Successfully.")
 
+    def connect(self):
+        logging.info("Connecting to LDlite database...")
         try:
-            self.connection = postgres.connect(f"dbname={dbname} user={user} password={password} host={host} port={port}")
+            self.connection = postgres.connect(f'dbname={os.getenv("dbname")} user={os.getenv("user")} password={os.getenv("password")} host={os.getenv("host")} port={os.getenv("port")}')
             self.cursor = self.connection.cursor()
         except Exception as e:
             raise e
-        print("Querier Initialized Successfully.\n")
-
+        logging.info("LDlite database connection established!")
+        
     def rollbackTransaction(self):
         try:
             self.cursor.execute('ROLLBACK')
@@ -49,10 +41,10 @@ class Querier:
             raise e
 
     def selectQuery(self, queryName):
-        print(f"Loading query \"{queryName}\"...")
+        logging.info(f"Loading query \"{queryName}\"...")
         self.query_name = queryName
         try:
-            with open(f"{self.query_filepath}/{self.query_name}", "r") as q:
+            with open(f"{os.getenv('query_filepath')}/{self.query_name}", "r") as q:
                 query = ""
                 for line in q:
                     query += line
@@ -63,35 +55,49 @@ class Querier:
                     paramlist[i] = item
         except FileNotFoundError:
             raise FileNotFoundError(f"Query File:\n{self.query_name}\nnot found")
-        print(f"Query \"{queryName}\" Loaded.\n")
+        logging.info(f"Query \"{queryName}\" Loaded.\n")
         return paramlist
 
     def runQuery(self, param_list):
-        print("Excecuting Query...")
+        self.connect()
+        if self.query_name == '':
+            logging.warning("Query name must not be empty")
+            PopupWindow("Query name must not be empty")
         paramed_query = self.query
         for param in param_list:
             try:
                 paramName = '{' + param['originalname'] + '}'
             except:
                 paramName = '{' + param['label'].cget('text') + '}'
-            print(paramName)
-            try:
-                paramValue = str(param['entry'].get().strftime('YYYY-MM-DD'))
-            except:
-                paramValue = str(param['entry'].get())
-            print(paramValue)
+            logging.info(paramName)
+
+            if type(param['entry']) == tk.Button:
+                paramValue = str(param['value'])
+            else:
+                try:
+                    paramValue = str(param['entry'].get().strftime('YYYY-MM-DD'))
+                except:
+                    paramValue = str(param['entry'].get())
+            logging.info(paramValue)
             paramed_query = paramed_query.replace(paramName, paramValue)
         #try:
+        logging.info("Excecuting Query...")
         self.cursor.execute(paramed_query)
+        
         #except Exception as e:
          #   raise e
-        print("Query Excecuted Successfully.\n")
+        logging.info("Query Excecuted Successfully.\n")
         return 0
 
     def saveResults(self, outfile_name):
-        print("Saving Query Results...")
+        logging.info("Saving Query Results...")
+        if outfile_name.find('.') == -1:
+            outpath = f"{os.getenv('output_filepath')}/{outfile_name}.tsv"
+        else:
+            outpath = f"{os.getenv('output_filepath')}/{outfile_name}"
+
         try:
-            with open(f"{self.output_filepath}/{outfile_name}", 'w', encoding="utf-8") as out:
+            with open(outpath, 'w', encoding="utf-8") as out:
                 for i, column in enumerate(self.cursor.description):
                     out.write(column[0])
                     if i != len(self.cursor.description)-1:
@@ -106,22 +112,21 @@ class Querier:
                     out.write((newline+'\n').replace('\'', ''))
         except Exception as e:
             raise e
-        print(f"Query Results Saved Sucessfully as \"{outfile_name}.\"\n")
+        logging.info(f"Query Results Saved Sucessfully as \"{outfile_name}.\"\n")
 
 
 # Popup Windows to give alert notices
 class PopupWindow:
     def __init__(self, text):
         self.popup = tk.Tk()
+        self.popup.attributes("-topmost", True)
+        self.popup.configure(background="lavender")
         self.popup.wm_title("Popup Notice")
-        self.popup.columnconfigure(0, minsize=100)
-        self.popup.rowconfigure([0, 1], minsize=25)
 
-
-        self.text_label = tk.Label(master=self.popup, text=text)
-        self.text_label.grid(row=0, column=0)
-        self.close_button = tk.Button(master=self.popup, text="OK", command=self.close)
-        self.close_button.grid(row=1, column=0)
+        self.text_label = ttk.Label(master=self.popup, text=text, font='TkDefaultFont 10 bold',background="lavender",justify="center")
+        self.text_label.pack(side="top", anchor="center", pady=5, padx=5)
+        self.close_button = tk.Button(master=self.popup, text="OK", font='TkDefaultFont 10 bold', command=self.close)
+        self.close_button.pack(side="top", anchor="center",pady=5)
 
         self.popup.mainloop()
 
@@ -130,52 +135,59 @@ class PopupWindow:
 
 # Allows query selection
 # Includes buttons to open the query display and to run the query
-# File Menu includes an option to reselect config and one to exit
+
 class ActionMenu:
-    def __init__(self):
-        print("Initializing Action Menu...")
+    def __init__(self, querier):
+        logging.info("Initializing Action Menu...")
+
+        self.querier = querier
+
         self.act_menu = tk.Tk()
+        self.act_menu.configure(background="lavender")
+        sv_ttk.set_theme("light")
+
         self.act_menu.wm_title("LDPlite Querier - Actions Menu")
-        self.act_menu.columnconfigure([0, 1, 2, 3], minsize=20, pad=10)
-        self.act_menu.rowconfigure([0, 1, 2, 3, 4, 5], minsize=10, pad=10)
 
         # General Title
-        self.title = tk.Label(master=self.act_menu, text="Select a query and input a file name.", font='TkDefaultFont 12 bold')
+        self.title = ttk.Label(master=self.act_menu, text="Select a query and input a file name.", font='TkDefaultFont 12 bold')
+        self.title.configure(background="lavender")
         #self.title.grid(row=0, column=0, columnspan=3)
-        self.title.pack(fill='x', side='top')
+        self.title.pack(side='top', anchor='center', pady=5)
         
 
         # Selected Query Label
-        self.query_desc = tk.Label(master=self.act_menu, text="Query Name: ", font='TkDefaultFont 10')
+        self.query_desc = ttk.Label(master=self.act_menu, text="Query Name: ", font='TkDefaultFont 10 bold')
+        self.query_desc.configure(background="lavender")
         #self.query_desc.grid(row=1, column=0)
         self.query_desc.pack(side='top')
 
         # Query Select Dropdown
         options = []
-        for file in os.listdir(f"./{queriesDir}"):
+        for file in os.listdir(f"./{os.getenv('query_filepath')}"):
             if file.endswith('.sql'):
                 options.append(file)
         self.config_input_options = ttk.Combobox(self.act_menu, value=options, width=45)
         self.config_input_options.bind("<<ComboboxSelected>>", self.selected)
         #self.config_input_options.grid(row=1, column=1, columnspan=2)
-        self.config_input_options.pack(fill='x', side='top', padx=15)
+        self.config_input_options.pack(fill='x', side='top', padx=15, pady=5)
 
         # Output File Name Prompt
-        self.file_desc = tk.Label(master=self.act_menu, text="Output File Name:", font='TkDefaultFont 10')
+        self.file_desc = ttk.Label(master=self.act_menu, text="Output File Name:", font='TkDefaultFont 10 bold')
+        self.file_desc.configure(background="lavender")
         #self.file_desc.grid(row=3, column=0, columnspan=1)
         self.file_desc.pack(side='top')
 
         # Output File Name Field
         # Defaults to the name of the query file
-        self.file_prompt = tk.Entry(master=self.act_menu, font='TkDefaultFont 10', width=41)
+        self.file_prompt = ttk.Entry(master=self.act_menu, font='TkDefaultFont 10', width=41)
         self.file_prompt.insert(0, querier.query_name)
         #self.file_prompt.grid(row=3, column=1, columnspan=2)
-        self.file_prompt.pack(side='top', fill='x', padx=15)
+        self.file_prompt.pack(side='top', fill='x', padx=15, pady=5)
 
         # Run Query Button
-        self.run = tk.Button(master=self.act_menu, text="Run Query", command=self.run_query, font='TkDefaultFont 10')
+        self.run = tk.Button(master=self.act_menu, text="Run Query", command=self.run_query, font='TkDefaultFont 10 bold')
         #self.run.grid(row=4, column=1, columnspan=1)
-        self.run.pack(side='bottom')
+        self.run.pack(side='bottom', pady=10)
 
         # Menu Bar
         # File>Exit and File>Reconfigure
@@ -186,20 +198,21 @@ class ActionMenu:
         self.act_menu.config(menu=self.main_menu_bar)
 
         # Param Header Label
-        self.param_header = tk.Label(master=self.act_menu, text="Input Query Parameters:", font='TkDefaultFont 10 bold')
+        self.param_header = ttk.Label(master=self.act_menu, text="Input Query Parameters:", font='TkDefaultFont 11 bold')
+        self.param_header.configure(background="lavender")
         self.param_active = False
 
         # List to hold parameter objects
         self.param_objects = []
 
 
-        print("Action Menu Initialized.\n")
+        logging.info("Action Menu Initialized.\n")
 
         self.act_menu.mainloop()
         
-
+    # Loads the selected query. Updates menu to display the parameters for the query and auto-fills the output file name field.
     def selected(self, *args):
-        print(f"Query \"{self.config_input_options.get()}\" selected.")
+        logging.info(f"Query \"{self.config_input_options.get()}\" selected.")
         if self.param_active:
             self.param_header.pack_forget()
             self.param_active = False
@@ -209,113 +222,140 @@ class ActionMenu:
                 item['entry'].destroy()
         except Exception as e:
             winsound.MessageBeep()
+            logging.warning(e.with_traceback.__dict__)
             PopupWindow(e)        
-            print(e)
         self.param_objects.clear()
         try:
-            params = querier.selectQuery(self.config_input_options.get())
+            params = self.querier.selectQuery(self.config_input_options.get())
         except Exception as e:
-            print(e)
+            logging.warning(e.with_traceback)
             winsound.MessageBeep()
             PopupWindow(e)
         self.file_prompt.delete(0,len(self.file_prompt.get()))
         today = datetime.today()
-        self.file_prompt.insert(0, f'{querier.query_name[:-4]}--{today.day}-{today.month}-{today.year}--{today.hour}-{today.minute}-{today.second}.tsv')
+        self.file_prompt.insert(0, f'{self.querier.query_name[:-4]}--{today.day}-{today.month}-{today.year}--{today.hour}-{today.minute}-{today.second}.tsv')
         if params != []:
-            self.param_header.pack()
+            self.param_header.pack(pady=5)
             self.param_active = True
         for i, param in enumerate(params):
             splitParam = param.split("|")
             if len(splitParam) == 1:
-                label = tk.Label(master=self.act_menu, text=param, font='TkDefaultFont 10')
-                entry = tk.Entry(master=self.act_menu, font='TkDefaultFont 10', width=41)
-                self.param_objects.append({"label": label,"entry": entry})
+                label = ttk.Label(master=self.act_menu, text=param, font='TkDefaultFont 10')
+                label.configure(background="lavender")
+                entry = ttk.Entry(master=self.act_menu, font='TkDefaultFont 10', width=41)
+                self.param_objects.append({"label": label,"entry": entry, "value":None})
             elif len(splitParam) > 1:
+                logging.info(f"Creating Query Parameter Labels and Entries for: {splitParam}")
                 if splitParam[1] == "DATE":
-                    label = tk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
+                    label = ttk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10 bold')
+                    label.configure(background="lavender")
                     entry = DateEntry(master=self.act_menu, width=45, date_pattern="YYYY-MM-DD")
-                    self.param_objects.append({"label": label, "entry": entry, "originalname":param})
+                    self.param_objects.append({"label": label, "entry": entry, "originalname":param, "value":None})
+                elif splitParam[1] == "SINGLE_COLUMN_CSV_NO_HEADER":
+                    label = ttk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
+                    label.configure(background="lavender")
+                    entry = tk.Button(master=self.act_menu, text="Select File", command= lambda: self.file_select(i), font='TkDefaultFont 10', width=30)
+                    self.param_objects.append({"label": label, "entry": entry, "originalname":param, "value":None})
                 else:
-                    label = tk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
-                    entry = ttk.Combobox(self.act_menu, value=splitParam[1:], width=45)
-                    self.param_objects.append({"label": label,"entry": entry, "originalname":param})
+                    label = ttk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
+                    label.configure(background="lavender")
+                    entry = ttk.Combobox(self.act_menu, value=splitParam[1:], width=45, height=4)
+                    self.param_objects.append({"label": label,"entry": entry, "originalname":param, "value":None})
             self.param_objects[i]["label"].pack(side='top')
-            self.param_objects[i]["entry"].pack(side='top')
+            self.param_objects[i]["entry"].pack(side='top',pady=5)
 
+    # Allows the user to select a file when a query uses the "SINGLE_COLUMN_CSV_NO_HEADER" parameter option
+    # Param index identifies which parameter is being entered
+    def file_select(self, param_index):
+        
+        filename = tk.filedialog.askopenfilename()
+        if not filename:
+            return
+        file = open(filename, 'r')
+        filereader = csv.reader(file)
 
+        lines = []
+
+        for line in filereader:
+                lines.append(line[0].strip())
+
+        self.param_objects[param_index]["entry"].config(text = filename[filename.rfind('/')+1:])
+        self.param_objects[param_index]['value'] = "'" + "', '".join(lines) + "'"
+        self.param_objects[param_index]["label"].update_idletasks()
+
+        self.run.config(state="normal")
+        
+    # Tells the querier to execute the query. Triggers the save function
     def run_query(self):
         for param in self.param_objects:
-            if param['entry'].get() == '':
-                winsound.MessageBeep()
-                PopupWindow('Parameters must not be empty.')
+            if type(param['entry']) == tk.Button:
+                if param['value'] == None:
+                    winsound.MessageBeep()
+                    logging.warning('Parameters must not be empty')
+                    PopupWindow('Parameters must not be empty.')
+            else:
+                if param['entry'].get() == '':
+                    winsound.MessageBeep()
+                    logging.warning('Parameters must not be empty')
+                    PopupWindow('Parameters must not be empty.')
+        
         file = self.file_prompt.get()
+        
         try:
-            querier.runQuery(self.param_objects)
-            querier.saveResults(file)
+            self.querier.runQuery(self.param_objects)
+            self.querier.saveResults(file)
         except Exception as e:
-            print(e)
-            querier.rollbackTransaction()
+            logging.warning(e.with_traceback)
+            self.querier.rollbackTransaction()
             winsound.MessageBeep()
             PopupWindow(e)
             return
         winsound.MessageBeep()
-        PopupWindow(f"Query Results Saved as:\n{file}")
-
-def generateLog(filepath):
-    start = datetime.now()
-    logfile = f"{filepath}/{start.year}-{start.month}-{start.day}--{start.hour}-{start.minute}-{start.second}.log"
-    print("Saving Log to: " + logfile)
-    sys.stdout = open(logfile, "w")
-    print("Log Start time: " + str(start) + "\n")
-    return start
+        logging.info(f"Query Results Saved as:\n\n{file}")
+        PopupWindow(f"Query Results Saved as:\n\n{file}")
 
 def launch():
-    global querier
-    global configName
-    global queriesDir
-    configName = "config.json"
     try:
-        with open(configName, 'r') as c:
-            config = json.load(c)
-            log = config["generate_log"]    
-            log_location = config["log_file_output_filepath"]
-            queriesDir = config["query_filepath"]
-            output = config["output_filepath"]
-        if log:
-            try:
-                os.mkdir(log_location)
-                print(f"Directory for logs \"{log_location}\" created\n")
-            except Exception as e:
-                print("Existing log directory found\n")
-            generateLog(log_location)
-        else:
-            print("\nLogging Disabled\n")
         try:            
-            os.mkdir(queriesDir)
-            print(f"Directory for queries \"{queriesDir}\" created\n")
+            os.mkdir(os.getenv('query_filepath'))
+            logging.info(f"Directory for queries \"{os.getenv('query_filepath')}\" created\n")
         except Exception as e:
-            print("Existing query directory found\n")
+            logging.info("Existing query directory found\n")
         try:
-            os.mkdir(output)
-            print(f"Directory for outputted files \"{output}\" created\n")
+            os.mkdir(os.getenv('output_filepath'))
+            logging.info(f"Directory for outputted files \"{os.getenv('output_filepath')}\" created\n")
         except Exception as e:
-            print("Existing output directory found\n")
+            logging.info("Existing output directory found\n")
+
     except Exception as e:
-        print(e)
+        logging.warning(e.with_traceback)
         winsound.MessageBeep()
         PopupWindow(e)
         return
 
     try:
-        querier = Querier(configName)
+        querier = Querier()
     except Exception as e:
-        print(e)
+        logging.warning(e.with_traceback)
         winsound.MessageBeep()
         PopupWindow(e)
         return
     
-    ActionMenu()
-
+    ActionMenu(querier)
 
 if __name__ == "__main__":
+    dotenv.load_dotenv()
+
+    try:
+        os.mkdir(os.getenv('log_file_output_filepath'))
+        print(f"Directory for logs \"{os.getenv('log_file_output_filepath')}\" created")
+    except Exception as e:
+        print("Existing log directory found")
+
+    start_time = datetime.now()
+    logFile = f'{os.getenv("log_file_output_filepath")}/LDlite Reporting - {start_time.year}-{start_time.month}-{start_time.day}--{start_time.hour}-{start_time.minute}-{start_time.second}.log'
+    logging.basicConfig(filename=logFile, encoding='utf-8', level=logging.DEBUG,
+                    format='%(asctime)s | %(levelname)s | %(message)s', datefmt='%m/%d/%Y %H:%M:%S')
+    logging.info("Beginning Log")
+    
     launch()
