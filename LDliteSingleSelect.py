@@ -31,6 +31,7 @@ class Querier:
             self.connection = postgres.connect(f'dbname={os.getenv("dbname")} user={os.getenv("user")} password={os.getenv("password")} host={os.getenv("host")} port={os.getenv("port")}')
             self.cursor = self.connection.cursor()
         except Exception as e:
+            PopupWindow(e)
             raise e
         logging.info("LDlite database connection established!")
         
@@ -167,7 +168,7 @@ class ActionMenu:
             if file.endswith('.sql'):
                 options.append(file)
         self.config_input_options = ttk.Combobox(self.act_menu, value=options, width=45)
-        self.config_input_options.bind("<<ComboboxSelected>>", self.selected)
+        self.config_input_options.bind("<<ComboboxSelected>>", self.querySelected)
         #self.config_input_options.grid(row=1, column=1, columnspan=2)
         self.config_input_options.pack(fill='x', side='top', padx=15, pady=5)
 
@@ -211,7 +212,7 @@ class ActionMenu:
         self.act_menu.mainloop()
         
     # Loads the selected query. Updates menu to display the parameters for the query and auto-fills the output file name field.
-    def selected(self, *args):
+    def querySelected(self, *args):
         logging.info(f"Query \"{self.config_input_options.get()}\" selected.")
         if self.param_active:
             self.param_header.pack_forget()
@@ -273,12 +274,13 @@ class ActionMenu:
             return
         file = open(filename, 'r')
         filereader = csv.reader(file)
-
-        lines = []
-
-        for line in filereader:
-                lines.append(line[0].strip())
-
+        try:
+            lines = []
+            for line in filereader:
+                    lines.append(line[0].strip())
+        except Exception as e:
+            PopupWindow(e)
+            raise e
         self.param_objects[param_index]["entry"].config(text = filename[filename.rfind('/')+1:])
         self.param_objects[param_index]['value'] = "'" + "', '".join(lines) + "'"
         self.param_objects[param_index]["label"].update_idletasks()
