@@ -246,7 +246,7 @@ class ActionMenu:
                 entry = ttk.Entry(master=self.act_menu, font='TkDefaultFont 10', width=41)
                 self.param_objects.append({"label": label,"entry": entry, "value":None})
             elif len(splitParam) > 1:
-                logging.info(f"Creating Query Parameter Labels and Entries for: {splitParam}")
+                logging.info(f"Creating Query Parameter Labels and Entries for parameter {i+1}: {splitParam}")
                 if splitParam[1] == "DATE":
                     label = ttk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10 bold')
                     label.configure(background="lavender")
@@ -255,7 +255,8 @@ class ActionMenu:
                 elif splitParam[1] == "SINGLE_COLUMN_CSV_NO_HEADER":
                     label = ttk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
                     label.configure(background="lavender")
-                    entry = tk.Button(master=self.act_menu, text="Select File", command= lambda: self.file_select(i), font='TkDefaultFont 10', width=30)
+                    param_index = i
+                    entry = tk.Button(master=self.act_menu, text="Select File", command= lambda: self.file_select(param_index), font='TkDefaultFont 10', width=30)
                     self.param_objects.append({"label": label, "entry": entry, "originalname":param, "value":None})
                 else:
                     label = ttk.Label(master=self.act_menu, text=splitParam[0], font='TkDefaultFont 10')
@@ -269,8 +270,11 @@ class ActionMenu:
     # Param index identifies which parameter is being entered
     def file_select(self, param_index):
         
+        logging.info(f"Opening file Select dialogue for parameter {param_index+1}")
         filename = tk.filedialog.askopenfilename()
         if not filename:
+            logging.warning("Selected file not found.")
+            PopupWindow("Selected file not found.")
             return
         file = open(filename, 'r')
         filereader = csv.reader(file)
